@@ -12,6 +12,8 @@ data class Cell (
         return this.copy(isRevealed = true) // Copiamos la celda con el nuevo estado revelado
     }
     fun toggleFlag(): Cell = if (!isRevealed) copy(isFlagged = !isFlagged) else this
+
+    fun unToggleFlag(): Cell = if (isFlagged) copy(isFlagged = false) else this
 }
 
 typealias Board = List<List<Cell>>

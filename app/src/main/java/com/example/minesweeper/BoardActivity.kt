@@ -2,13 +2,15 @@ package com.example.minesweeper
 
 import android.app.Activity
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import android.widget.Toast
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,13 +19,20 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
+import androidx.compose.material3.windowsizeclass.WindowHeightSizeClass
+import androidx.compose.material3.windowsizeclass.WindowSizeClass
+import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
+import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -31,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -38,31 +48,35 @@ import androidx.lifecycle.ViewModelProvider
 import com.example.minesweeper.model.Cell
 import com.example.minesweeper.viewModel.BoardViewModel
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
+import kotlinx.coroutines.flow.collectLatest
 
 
 class BoardActivity : ComponentActivity() {
+    @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         val boardSize = intent.getIntExtra("boardSize", 7)
         val numMines = intent.getIntExtra("numMines", 8)
         val maxTime = intent.getIntExtra("maxTime", 120)
+        val alias = intent.getStringExtra("alias") ?: ""
 
         val viewModelFactory = object : ViewModelProvider.Factory {
             override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-                return BoardViewModel(boardSize, numMines, maxTime) as T
+                return BoardViewModel(boardSize, numMines, maxTime, alias) as T
             }
         }
         val boardViewModel: BoardViewModel by viewModels { viewModelFactory }
 
         setContent {
-            BoardScreen(viewModel = boardViewModel)
+            val windowSizeClass = calculateWindowSizeClass(this)
+            BoardScreen(viewModel = boardViewModel, windowSizeClass)
         }
     }
 }
 
 @Composable
-fun BoardScreen(viewModel: BoardViewModel) {
+fun BoardScreen(viewModel: BoardViewModel, windowSizeClass: WindowSizeClass) {
     val backgroundColor = Color(0xFF69BAC9)
 
     val systemUiController = rememberSystemUiController()
@@ -75,11 +89,23 @@ fun BoardScreen(viewModel: BoardViewModel) {
 
     val context = LocalContext.current
 
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+    val isTablet = windowSizeClass.widthSizeClass >= WindowWidthSizeClass.Medium && windowSizeClass.heightSizeClass >= WindowHeightSizeClass.Medium
+
     SideEffect {
         systemUiController.setStatusBarColor(
             color = statusBarColor,
             darkIcons = false
         )
+    }
+
+    LaunchedEffect(true) {
+        viewModel.toastMessage.collectLatest { message ->
+            Log.d("DEBUG", "MOSTRANDO TOAST: $message")
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
     }
 
     Surface (
@@ -98,12 +124,14 @@ fun BoardScreen(viewModel: BoardViewModel) {
                     confirmButton = {
                         Button(
                             onClick = {
+                                viewModel.saveGameResult(context)
                                 val intent = Intent(context, ResultActivity::class.java).apply {
                                     putExtra("elapsedTime", viewModel.elapsedTime)
                                     putExtra("hasWin", viewModel.hasWin)
                                     putExtra("lossReason", viewModel.lossReason)
                                     putExtra("revealedMines", viewModel.countRevealedMines())
                                     putExtra("unrevealedMines", viewModel.countUnrevealedMines())
+                                    putExtra("alias", viewModel.alias)
                                 }
                                 viewModel.resetLossFlag()
                                 context.startActivity(intent)
@@ -128,12 +156,14 @@ fun BoardScreen(viewModel: BoardViewModel) {
                     confirmButton = {
                         Button(
                             onClick = {
+                                viewModel.saveGameResult(context)
                                 val intent = Intent(context, ResultActivity::class.java).apply {
                                     putExtra("elapsedTime", viewModel.elapsedTime)
                                     putExtra("hasWin", viewModel.hasWin)
                                     putExtra("lossReason", viewModel.lossReason)
                                     putExtra("revealedMines", viewModel.countRevealedMines())
                                     putExtra("unrevealedMines", viewModel.countUnrevealedMines())
+                                    putExtra("alias", viewModel.alias)
                                 }
                                 viewModel.resetWinFlag()
                                 context.startActivity(intent)
@@ -150,26 +180,201 @@ fun BoardScreen(viewModel: BoardViewModel) {
                 )
             }
 
-            Text(text = "Tiempo: $elapsedTime segundos")
-            Column {
-                board.forEach { row ->
-                    Row {
-                        row.forEach { cell ->
-                            CellBox(
-                                cell = cell,
-                                onReveal = { viewModel.revealCell(cell) },
-                                onToggleFlag = { viewModel.toggleFlag(cell) }
+            if (isTablet) {
+                if(isLandscape){
+                    Row(modifier = Modifier.fillMaxSize()) {
+                        // Panel izquierdo
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxSize(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Text(text = "Tiempo: $elapsedTime segundos")
+                            Spacer(modifier = Modifier.height(10.dp))
+                            board.forEach { row ->
+                                Row {
+                                    row.forEach { cell ->
+                                        CellBox(
+                                            cell = cell,
+                                            onReveal = { viewModel.revealCell(cell) },
+                                            onToggleFlag = { viewModel.toggleFlag(cell) },
+                                            onSelectCell = { viewModel.selectCell(cell) }
+                                        )
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Row(
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                val cellCount = board.firstOrNull()?.size ?: 1
+                                val boxWidth = 40.dp
+
+                                Box(modifier = Modifier.width(boxWidth * (cellCount / 2))) {
+                                    Text(
+                                        text = "Minas: ${viewModel.countMines()}",
+                                        modifier = Modifier.align(Alignment.Center)
+                                    )
+                                }
+                                Box(modifier = Modifier.width(boxWidth * (cellCount - cellCount / 2))) {
+                                    Text(
+                                        text = "Sin revelar: ${viewModel.countUnrevealedCells()}",
+                                        modifier = Modifier.align(Alignment.Center)
+                                    )
+                                }
+                            }
+                        }
+
+                        // Panel derecho
+                        val scrollState = rememberScrollState()
+
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxSize()
+                                .verticalScroll(scrollState),
+                            verticalArrangement = Arrangement.Center,
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            viewModel.selectedCells.reversed().forEach {
+                                Text(
+                                    text = "Casilla seleccionada: (${it.cell.x}, ${it.cell.y})",
+                                    fontSize = 24.sp,
+                                    color = Color.DarkGray
+                                )
+                                Text(
+                                    text = "Tiempo: ${it.time} segundos",
+                                    fontSize = 20.sp,
+                                    color = Color.Gray
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                            }
+                        }
+                    }
+                }else{
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        // Panel superior
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxSize(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Text(text = "Tiempo: $elapsedTime segundos")
+                            Spacer(modifier = Modifier.height(10.dp))
+                            board.forEach { row ->
+                                Row {
+                                    row.forEach { cell ->
+                                        CellBox(
+                                            cell = cell,
+                                            onReveal = { viewModel.revealCell(cell) },
+                                            onToggleFlag = { viewModel.toggleFlag(cell) },
+                                            onSelectCell = { viewModel.selectCell(cell) }
+                                        )
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Row(
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                val cellCount = board.firstOrNull()?.size ?: 1
+                                val boxWidth = 40.dp
+
+                                Box(modifier = Modifier.width(boxWidth * (cellCount / 2))) {
+                                    Text(
+                                        text = "Minas: ${viewModel.countMines()}",
+                                        modifier = Modifier.align(Alignment.Center)
+                                    )
+                                }
+                                Box(modifier = Modifier.width(boxWidth * (cellCount - cellCount / 2))) {
+                                    Text(
+                                        text = "Sin revelar: ${viewModel.countUnrevealedCells()}",
+                                        modifier = Modifier.align(Alignment.Center)
+                                    )
+                                }
+                            }
+                        }
+
+                        // Panel inferior
+                        val scrollState = rememberScrollState()
+
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxSize()
+                                .verticalScroll(scrollState),
+                            verticalArrangement = Arrangement.Center,
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            viewModel.selectedCells.reversed().forEach {
+                                Text(
+                                    text = "Casilla seleccionada: (${it.cell.x}, ${it.cell.y})",
+                                    fontSize = 24.sp,
+                                    color = Color.DarkGray
+                                )
+                                Text(
+                                    text = "Tiempo: ${it.time} segundos",
+                                    fontSize = 20.sp,
+                                    color = Color.Gray
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                            }
+                        }
+                    }
+                }
+
+            } else {
+                Text(text = "Tiempo: $elapsedTime segundos")
+                Spacer(modifier = Modifier.height(10.dp))
+                Column {
+                    board.forEach { row ->
+                        Row {
+                            row.forEach { cell ->
+                                CellBox(
+                                    cell = cell,
+                                    onReveal = { viewModel.revealCell(cell) },
+                                    onToggleFlag = { viewModel.toggleFlag(cell) },
+                                    onSelectCell = { viewModel.selectCell(cell) }
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        val cellCount = board.firstOrNull()?.size ?: 1
+                        val boxWidth = 40.dp
+
+                        Box(modifier = Modifier.width(boxWidth * (cellCount / 2))) {
+                            Text(
+                                text = "Minas: ${viewModel.countMines()}",
+                                modifier = Modifier.align(Alignment.Center)
+                            )
+                        }
+                        Box(modifier = Modifier.width(boxWidth * (cellCount - cellCount / 2))) {
+                            Text(
+                                text = "Sin revelar: ${viewModel.countUnrevealedCells()}",
+                                modifier = Modifier.align(Alignment.Center)
                             )
                         }
                     }
                 }
             }
+
         }
     }
 }
 
 @Composable
-fun CellBox(cell: Cell, onReveal: () -> Unit, onToggleFlag: () -> Unit) {
+fun CellBox(cell: Cell, onReveal: () -> Unit, onToggleFlag: () -> Unit, onSelectCell: () -> Unit) {
     val size = 40.dp
     Box(
         modifier = Modifier
@@ -184,8 +389,14 @@ fun CellBox(cell: Cell, onReveal: () -> Unit, onToggleFlag: () -> Unit) {
             )
             .pointerInput(Unit) {
                 detectTapGestures(
-                    onTap = { onReveal() },
-                    onLongPress = { onToggleFlag() }
+                    onTap = {
+                        onReveal()
+                        onSelectCell()
+                    },
+                    onLongPress = {
+                        onToggleFlag()
+                        onSelectCell()
+                    }
                 )
             },
         contentAlignment = Alignment.Center

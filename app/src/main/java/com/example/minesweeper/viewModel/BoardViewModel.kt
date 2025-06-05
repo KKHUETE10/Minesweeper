@@ -1,11 +1,15 @@
 package com.example.minesweeper.viewModel
 
-import androidx.compose.runtime.State
+import android.content.Context
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.minesweeper.GameDatabase
+import com.example.minesweeper.GameRepository
+import com.example.minesweeper.GameResult
 import com.example.minesweeper.logic.generateBoard
 import com.example.minesweeper.model.Board
 import com.example.minesweeper.model.Cell
@@ -13,18 +17,20 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 
 
 class BoardViewModel(
     private val boardSize: Int,
     private val numMines: Int,
-    private val maxTime: Int
+    private val maxTime: Int,
+    val alias: String
     ) : ViewModel() {
 
     var board by mutableStateOf(generateBoard(boardSize, numMines))
         private set
-
 
     private var startTime by mutableStateOf(System.currentTimeMillis())
     var elapsedTime by mutableStateOf(0L)
@@ -38,6 +44,23 @@ class BoardViewModel(
 
     var hasWin by mutableStateOf(false)
         private set
+
+    data class SelectedCellWithTime(
+        val cell: Cell,
+        val time: Long
+    )
+
+    private val _toastMessage = MutableSharedFlow<String>()
+    val toastMessage = _toastMessage.asSharedFlow()
+
+    private val _selectedCells = mutableStateListOf<SelectedCellWithTime>()
+    val selectedCells: List<SelectedCellWithTime> get() = _selectedCells
+
+    fun selectCell(cell: Cell) {
+        if (_selectedCells.none { it.cell == cell }) {
+            _selectedCells.add(SelectedCellWithTime(cell, elapsedTime))
+        }
+    }
 
     init {
         setBoard()
@@ -57,9 +80,22 @@ class BoardViewModel(
     }
 
     fun revealCell(cell: Cell) {
-        if (cell.isRevealed) return
+        val currentCell = board[cell.y][cell.x]
 
-        val updatedCell = cell.reveal() // Usamos el método `reveal()` para obtener una nueva celda revelada
+        if (currentCell.isRevealed){
+            viewModelScope.launch {
+                _toastMessage.emit("¡La celda (${cell.x + 1} , ${cell.y + 1}) ya está revelada!")
+            }
+            return
+        }
+
+        if(currentCell.isFlagged){
+            val updatedCell = currentCell.unToggleFlag()
+            board = updateBoardWithNewCell(updatedCell)
+            return
+        }
+
+        val updatedCell = currentCell.reveal() // Usamos el método `reveal()` para obtener una nueva celda revelada
         board = updateBoardWithNewCell(updatedCell)
 
         if (updatedCell.hasMine) {
@@ -112,8 +148,10 @@ class BoardViewModel(
     }
 
     fun toggleFlag(cell: Cell) {
-        if (cell.isRevealed) return
-        val updatedCell = cell.toggleFlag()
+        val currentCell = board[cell.y][cell.x]
+
+        if (currentCell.isRevealed) return
+        val updatedCell = currentCell.toggleFlag()
         board = updateBoardWithNewCell(updatedCell)
 
         if (checkIfGameWon()) {
@@ -169,6 +207,34 @@ class BoardViewModel(
     fun countUnrevealedMines(): Int {
         return board.flatten().count { it.hasMine && !it.isRevealed && !it.isFlagged }
     }
+
+    fun countMines(): Int {
+        return board.flatten().count { it.hasMine }
+    }
+
+    fun countUnrevealedCells(): Int {
+        return board.flatten().count { !it.isRevealed }
+    }
+
+    fun saveGameResult(context: Context) {
+        val db = GameDatabase.getDatabase(context)
+        val repo = GameRepository(db.gameDao())
+
+         val result = GameResult(
+             timestamp = System.currentTimeMillis(),
+             duration = elapsedTime,
+             hasWon = hasWin,
+             revealedMines = if (hasWin) countMines() else countRevealedMines(),
+             unrevealedMines = if (hasWin) 0 else countUnrevealedMines(),
+             lossReason = if (hasWin) null else lossReason,
+             alias = alias
+         )
+
+        viewModelScope.launch {
+            repo.saveResult(result)
+        }
+    }
+
 
 }
 

@@ -25,6 +25,7 @@
         </activity>
         <activity android:name=".BoardActivity" />
         <activity android:name=".ResultActivity" />
+        <activity android:name=".ResultDetailActivity" />
     </application>
 
 </manifest>

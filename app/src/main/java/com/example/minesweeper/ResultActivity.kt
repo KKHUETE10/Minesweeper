@@ -5,7 +5,6 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
-import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -24,8 +23,6 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldColors
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Alignment
@@ -48,8 +45,9 @@ class ResultActivity : ComponentActivity() {
         val lossReason = intent.getStringExtra("lossReason") ?: ""
         val revealedMines = intent.getIntExtra("revealedMines", 0)
         val unrevealedMines = intent.getIntExtra("unrevealedMines", 0)
+        val alias = intent.getStringExtra("alias") ?: ""
 
-        val resultViewModel: ResultViewModel by viewModels() // Solo para el email
+        val resultViewModel: ResultViewModel by viewModels()
 
         setContent {
             ResultScreen(
@@ -58,6 +56,7 @@ class ResultActivity : ComponentActivity() {
                 lossReason,
                 revealedMines,
                 unrevealedMines,
+                alias,
                 resultViewModel
             )
         }
@@ -71,6 +70,7 @@ fun ResultScreen(
     lossReason: String,
     revealedMines: Int,
     unrevealedMines: Int,
+    alias: String,
     viewModel: ResultViewModel
 ) {
     val backgroundColor = Color(0xFF69BAC9)
@@ -117,6 +117,7 @@ fun ResultScreen(
                     ) {
                         Text("Resultado", fontSize = 24.sp)
                         Spacer(modifier = Modifier.height(16.dp))
+                        Text("\uD83D\uDC64 Alias: $alias", fontSize = 18.sp)
                         Text("⏱️ Tiempo: $elapsedTime s", fontSize = 18.sp)
                         if (!hasWin) {
                             Text("❌ Derrota: $lossReason", fontSize = 18.sp)
@@ -153,7 +154,7 @@ fun ResultScreen(
                         Spacer(modifier = Modifier.height(12.dp))
 
                         Button(
-                            onClick = { sendEmail(context, email, elapsedTime, hasWin, lossReason, revealedMines, unrevealedMines) },
+                            onClick = { sendEmail(context, email, elapsedTime, hasWin, lossReason, revealedMines, unrevealedMines, alias) },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = Color(0xFF1778A4),
                                 contentColor = Color.White
@@ -185,6 +186,7 @@ fun ResultScreen(
             ) {
                 Text("Resultado de la partida", fontSize = 24.sp)
                 Spacer(modifier = Modifier.height(16.dp))
+                Text("\uD83D\uDC64 Alias: $alias", fontSize = 18.sp)
                 Text("⏱️ Tiempo jugado: $elapsedTime segundos", fontSize = 18.sp)
                 Spacer(modifier = Modifier.height(8.dp))
                 if (!hasWin) {
@@ -216,7 +218,7 @@ fun ResultScreen(
 
                 Button(
                     enabled = email.isNotBlank(),
-                    onClick = {sendEmail(context, email, elapsedTime, hasWin, lossReason, revealedMines, unrevealedMines)},
+                    onClick = {sendEmail(context, email, elapsedTime, hasWin, lossReason, revealedMines, unrevealedMines, alias)},
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFF1778A4),
                         contentColor = Color.White
@@ -248,10 +250,12 @@ fun sendEmail(
     hasWin: Boolean,
     lossReason: String,
     revealedMines: Int,
-    unrevealedMines: Int
-){
+    unrevealedMines: Int,
+    alias: String
+) {
     val subject = "Resultados de la partida de Buscaminas"
     val body = buildString {
+        append("Alias: $alias \n")
         append("Tiempo jugado: $elapsedTime segundos\n")
         if (!hasWin) {
             append("Motivo de la derrota: $lossReason\n")
@@ -263,14 +267,15 @@ fun sendEmail(
         }
     }
 
-    val intent = Intent(Intent.ACTION_SENDTO).apply {
-        data = Uri.parse("mailto:${email}")
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "message/rfc822"  // MIME type para correo electrónico
+        putExtra(Intent.EXTRA_EMAIL, arrayOf(email))  // Destinatarios como array
         putExtra(Intent.EXTRA_SUBJECT, subject)
         putExtra(Intent.EXTRA_TEXT, body)
     }
 
     try {
-        context.startActivity(intent)
+        context.startActivity(Intent.createChooser(intent, "Enviar email con..."))
     } catch (e: ActivityNotFoundException) {
         Toast.makeText(context, "No hay aplicación de correo instalada", Toast.LENGTH_SHORT).show()
     }

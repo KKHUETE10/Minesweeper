@@ -1,22 +1,44 @@
 package com.example.minesweeper.viewModel
 
-import androidx.lifecycle.ViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.minesweeper.GameDatabase
+import com.example.minesweeper.GameResult
+import com.example.minesweeper.UserPreferences
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
-class MainViewModel : ViewModel() {
+class MainViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val _selectedDifficulty = MutableStateFlow("Normal")
-    val selectedDifficulty: StateFlow<String> = _selectedDifficulty
+    private val userPreferences = UserPreferences(application)
 
-    private val _selectedTime = MutableStateFlow(2) // tiempo en minutos
-    val selectedTime: StateFlow<Int> = _selectedTime
+    val selectedDifficulty = userPreferences.difficultyFlow.stateIn(viewModelScope, SharingStarted.Eagerly, "Normal")
+    val selectedTime = userPreferences.timeLimitFlow.stateIn(viewModelScope, SharingStarted.Eagerly, 2)
+    val alias = userPreferences.aliasFlow.stateIn(viewModelScope, SharingStarted.Eagerly, "")
+
+
+    private val dao = GameDatabase.getDatabase(application).gameDao()
+
+    val savedGames: Flow<List<GameResult>> = dao.getAllGames()
 
     fun setDifficulty(level: String) {
-        _selectedDifficulty.value = level
+        viewModelScope.launch {
+            userPreferences.saveDifficulty(level)
+        }
     }
 
     fun setTime(time: Int) {
-        _selectedTime.value = time
+        viewModelScope.launch {
+            userPreferences.saveTimeLimit(time)
+        }
+    }
+
+    fun setAlias(newAlias: String) {
+        viewModelScope.launch {
+            userPreferences.saveAlias(newAlias)
+        }
     }
 }

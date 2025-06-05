@@ -17,6 +17,9 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
+import androidx.compose.material3.windowsizeclass.WindowSizeClass
+import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -24,18 +27,20 @@ import com.example.minesweeper.viewModel.MainViewModel
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
 
 class MainActivity : ComponentActivity() {
+    @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
+            val windowSizeClass = calculateWindowSizeClass(this)
             val mainViewModel: MainViewModel = viewModel()
-            PrincipalMenu(modifier = Modifier,mainViewModel)
+            PrincipalMenu(modifier = Modifier, mainViewModel, windowSizeClass)
         }
     }
 }
 
 @Composable
-fun PrincipalMenu(modifier: Modifier = Modifier, viewModel: MainViewModel) {
+fun PrincipalMenu(modifier: Modifier = Modifier, viewModel: MainViewModel, windowSizeClass: WindowSizeClass) {
     val navController = rememberNavController()
     val systemUiController = rememberSystemUiController()
     val statusBarColor = Color(0xFF1778A4)
@@ -57,7 +62,8 @@ fun PrincipalMenu(modifier: Modifier = Modifier, viewModel: MainViewModel) {
             viewModel = viewModel,
             modifier = Modifier
                 .padding(paddingValues)
-                .fillMaxSize()
+                .fillMaxSize(),
+            windowSizeClass = windowSizeClass
         )
     }
 }
@@ -70,7 +76,8 @@ fun BottomNavigationBar(navController: NavHostController) {
     val items = listOf(
         BottomNavItem.Home,
         BottomNavItem.Help,
-        BottomNavItem.Settings
+        BottomNavItem.Settings,
+        BottomNavItem.History
     )
 
     NavigationBar(
@@ -84,7 +91,6 @@ fun BottomNavigationBar(navController: NavHostController) {
                 onClick = {
                     if (currentRoute != item.route) {
                         navController.navigate(item.route) {
-                            // Mantener un solo destino en la pila
                             popUpTo(navController.graph.startDestinationId) { saveState = true }
                             launchSingleTop = true
                             restoreState = true
@@ -104,10 +110,11 @@ fun BottomNavigationBar(navController: NavHostController) {
 }
 
 @Composable
-fun NavHostContainer(navController: NavHostController,viewModel: MainViewModel, modifier: Modifier = Modifier) {
+fun NavHostContainer(navController: NavHostController,viewModel: MainViewModel, modifier: Modifier = Modifier, windowSizeClass: WindowSizeClass) {
     NavHost(navController, startDestination = BottomNavItem.Home.route, modifier = modifier) {
         composable(BottomNavItem.Home.route) { HomeScreen(viewModel) }
         composable(BottomNavItem.Help.route) { HelpScreen() }
         composable(BottomNavItem.Settings.route) { SettingsScreen(viewModel) }
+        composable(BottomNavItem.History.route) { HistoryScreen(viewModel, windowSizeClass) }
     }
 }
